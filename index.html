@@ -1,0 +1,2296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CCAC Bailiffs and Officials Dashboard</title>
+  <!-- Firebase for real-time cross device sync. When enabled (useFirebase=true), this will connect to your Firestore backend.
+       Versions use compat libraries for simplicity. Safe to leave these scripts unused if you don't provide a Firebase config. -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+  <!-- Chart.js library removed; replaced by custom donut chart implementation -->
+<style>
+  /* Basic reset */
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; font-family: Arial, Helvetica, sans-serif; background-color: #f5f5f5; color: #333; }
+  /* Header styling */
+  header { display: flex; align-items: center; gap: 20px; padding: 20px; background-color: #2c3e50; color: #fff; }
+  /* Increase the logo size for better visibility */
+  /* Adjusted to 150px height per user request for a more prominent presence */
+  header img { height: 150px; width: auto; }
+  header h1 { margin: 0; font-size: 26px; line-height: 1.2; }
+
+  /* User info in header */
+  #user-info { margin-left: auto; text-align: right; }
+  #user-info span { display: block; font-size: 14px; }
+  #user-info button { margin-top: 4px; padding: 4px 10px; font-size: 14px; border: none; border-radius: 4px; background-color: #e74c3c; color: #fff; cursor: pointer; }
+  #user-info button:hover { background-color: #c0392b; }
+
+  /* Login screen styling */
+  #login-screen { max-width: 400px; margin: 80px auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+  #login-screen h2 { text-align: center; margin-top: 0; }
+  #login-screen form label { display: block; margin: 10px 0 5px; font-weight: bold; }
+  #login-screen form input { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+  #login-screen form button { width: 100%; padding: 10px; background-color: #3498db; color: #fff; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; }
+  #login-screen form button:hover { background-color: #2980b9; }
+
+  /* Search bar styling for live and banned lists */
+  .search-bar {
+    width: 100%;
+    padding: 6px 8px;
+    margin: 10px 0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+  }
+
+  /* Statistic card styling used on the dashboard overview. These cards act as
+     navigation shortcuts to other sections of the app (live sanctions,
+     suspended cases, banned members and upcoming meetings). A simple
+     responsive flex layout is used so that the cards wrap nicely on
+     smaller screens. */
+  #dashboard-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .stat-card {
+    flex: 1 1 calc(50% - 10px);
+    background-color: #ecf0f1;
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    cursor: pointer;
+    text-align: center;
+  }
+  .stat-card:hover {
+    background-color: #d0dfe6;
+  }
+  .stat-card h3 {
+    margin: 0 0 5px;
+    font-size: 18px;
+    color: #2c3e50;
+  }
+  .stat-card p {
+    margin: 0;
+    font-size: 20px;
+    font-weight: bold;
+    color: #34495e;
+  }
+
+  /* Case details overlay */
+  #case-details-overlay { display: none; position: fixed; top: 10%; left: 50%; transform: translateX(-50%); background: #fff; border: 1px solid #ccc; border-radius: 8px; padding: 20px; max-height: 80vh; width: 90%; max-width: 800px; overflow-y: auto; z-index: 1000; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
+  #case-details-overlay h3 { margin-top: 0; }
+  /* Style the close button inside the case details overlay. Make it larger and easier to click */
+  #case-details-overlay .close-btn {
+    float: right;
+    cursor: pointer;
+    color: #e74c3c;
+    font-weight: bold;
+    font-size: 24px;
+    line-height: 1;
+    margin-left: 10px;
+  }
+  #case-details-overlay table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  #case-details-overlay table th, #case-details-overlay table td { border: 1px solid #ddd; padding: 6px; }
+  #case-details-overlay table th { background-color: #f0f0f0; }
+
+  /* Highlight suspended cases */
+  .suspended-case { background-color: #fff8e1; }
+  /* Container for page content */
+  #container { max-width: 1000px; margin: 0 auto; padding: 20px; }
+  /* Button list layout */
+  .button-list { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 40px; }
+  .button-list button { flex: 1 1 200px; padding: 15px; font-size: 16px; border: none; border-radius: 6px; cursor: pointer; color: #fff; background-color: #3498db; transition: background-color 0.2s; }
+  .button-list button:hover { background-color: #2980b9; }
+  /* Sections styling */
+  section { display: none; }
+  section.active { display: block; }
+  section h2 { margin-top: 0; }
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+  table th, table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+  table th { background-color: #f0f0f0; }
+  table button { padding: 5px 10px; background-color: #e74c3c; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+  table button:hover { background-color: #c0392b; }
+  /* Forms */
+  form { margin-top: 20px; }
+  form label { display: block; margin: 10px 0 5px; font-weight: bold; }
+  form input, form select, form textarea { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+  form button[type="submit"] { padding: 10px 20px; background-color: #27ae60; color: #fff; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
+  form button[type="submit"]:hover { background-color: #1e8449; }
+</style>
+</head>
+<body>
+<!-- Header with logo and title -->
+<header>
+  <!-- Embedded club logo with white text as base64 to ensure it never disappears -->
+  <img src="data:image/png;base64,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" alt="Chesterton Community Angling Club logo">
+  <h1>Bailiffs and Officials Club Dashboard</h1>
+  <!-- User info and logout button, populated after login -->
+  <div id="user-info"></div>
+</header>
+
+<!-- Login screen (visible when no user is logged in) -->
+<div id="login-screen" style="display:none;">
+  <h2>Club Dashboard Login</h2>
+  <form id="login-form">
+    <label for="loginUsername">Username</label>
+    <input id="loginUsername" type="text" required>
+    <label for="loginPassword">Password</label>
+    <input id="loginPassword" type="password" required>
+    <button type="submit">Login</button>
+  </form>
+</div>
+
+<!-- Case details overlay for viewing and editing a specific case -->
+<div id="case-details-overlay">
+  <span class="close-btn" id="close-case-overlay">&times;</span>
+  <div id="case-details-content"></div>
+</div>
+
+<!-- Main container -->
+<div id="container">
+  <!-- Navigation buttons -->
+  <div class="button-list">
+    <button id="btn-sanction" type="button">Sanction a Member</button>
+    <button id="btn-meetings" type="button">Upcoming Meetings and Details</button>
+    <button id="btn-live" type="button">Live Sanctions</button>
+    <button id="btn-banned" type="button">Banned Members</button>
+    <button id="btn-aob" type="button">Any other Business</button>
+    <!-- Members directory removed; new dashboard button added for statistics overview -->
+    <button id="btn-dashboard" type="button">Dashboard Overview</button>
+    <button id="btn-users" type="button">User Management</button>
+  </div>
+
+  <!-- Section: Sanction a Member -->
+  <section id="section-sanction">
+    <h2>Sanction a Member</h2>
+    <form id="sanction-form">
+      <label for="memberName">Member Name</label>
+      <!-- Member directory removed; users must type the member name manually for each incident -->
+      <input id="memberName" type="text" required>
+      <label for="sanctionLevel">Sanction Level</label>
+      <select id="sanctionLevel" required>
+        <option value="">--Select--</option>
+        <option value="verbal_warning">Verbal Warning</option>
+        <option value="official_warning">Official Warning</option>
+        <option value="suspended_pending_meeting">Suspended pending meeting</option>
+        <option value="banned_indefinitely">Banned indefinitely</option>
+      </select>
+      <label for="sanctionReason">Reason (short)</label>
+      <input id="sanctionReason" type="text" required>
+      <label for="sanctionDetails">Details (optional)</label>
+      <textarea id="sanctionDetails"></textarea>
+      <button type="submit">Submit Sanction</button>
+    </form>
+  </section>
+
+  <!-- Section: Upcoming Meetings -->
+  <section id="section-meetings">
+    <h2>Upcoming Meetings and Details</h2>
+    <form id="meetings-form">
+      <label for="meetingTitle">Meeting Title</label>
+      <input id="meetingTitle" type="text">
+      <!-- Split the date/time picker into separate date and time fields to improve usability -->
+      <label for="meetingDate">Date</label>
+      <input id="meetingDate" type="date">
+      <label for="meetingTime">Time</label>
+      <input id="meetingTime" type="time">
+      <label for="meetingLocation">Location</label>
+      <input id="meetingLocation" type="text">
+      <label for="meetingDetails">Details</label>
+      <textarea id="meetingDetails"></textarea>
+      <button type="submit">Add Meeting</button>
+    </form>
+    <table id="meetings-table">
+      <thead>
+        <tr><th>Title</th><th>Date &amp; Time</th><th>Location</th><th>Details</th><th>Actions</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- Section: Live Sanctions -->
+  <section id="section-live">
+    <h2>Live Sanctions</h2>
+    <!-- Search bar for live sanctions -->
+    <input id="live-search" class="search-bar" type="text" placeholder="Search live sanctions by member name...">
+    <table id="live-table">
+      <thead>
+        <tr><th>Member</th><th>Sanction</th><th>Issued At</th><th>Reason</th><th>Actions</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- Section: Banned Members -->
+  <section id="section-banned">
+    <h2>Banned Members</h2>
+    <!-- Search bar for banned members -->
+    <input id="banned-search" class="search-bar" type="text" placeholder="Search banned members by name...">
+    <table id="banned-table">
+      <thead>
+        <tr><th>Member</th><th>Reason</th><th>Issued At</th><th>Actions</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- Section: Any other Business -->
+  <section id="section-aob">
+    <h2>Any other Business</h2>
+    <form id="aob-form">
+      <label for="aobSubject">Subject</label>
+      <input id="aobSubject" type="text">
+      <label for="aobDetails">Details</label>
+      <textarea id="aobDetails"></textarea>
+      <button type="submit">Add Entry</button>
+    </form>
+    <table id="aob-table">
+      <thead>
+        <tr><th>Subject</th><th>Date</th><th>Details</th><th>Actions</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- Members Directory removed -->
+
+  <!-- Section: User Management (Admin only) -->
+  <section id="section-users">
+    <h2>User Management</h2>
+    <form id="user-form">
+      <label for="newUserDisplayName">Display Name</label>
+      <input id="newUserDisplayName" type="text" required>
+      <label for="newUserUsername">Username</label>
+      <input id="newUserUsername" type="text" required>
+      <label for="newUserPassword">Password</label>
+      <input id="newUserPassword" type="password" required>
+      <label for="newUserRole">Role</label>
+      <!-- Only bailiff, official and chairman roles can be assigned to new users. Admin role is reserved for the built‑in account. -->
+      <select id="newUserRole">
+        <option value="bailiff">Bailiff</option>
+        <option value="official">Official</option>
+        <option value="chairman">Chairman</option>
+      </select>
+      <button type="submit">Add User</button>
+    </form>
+    <table id="users-table" style="margin-top:20px; width:100%; border-collapse: collapse;">
+      <thead>
+        <tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th>Actions</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- Section: Dashboard Overview (Stats and Charts) -->
+  <section id="section-dashboard">
+    <h2>Dashboard Overview</h2>
+    <div id="dashboard-stats" style="margin-bottom:20px;"></div>
+    <!-- Canvas for sanction type chart -->
+    <canvas id="sanction-chart" width="600" height="250" style="max-width:100%; height:250px;"></canvas>
+    <!-- Legend container for sanction distribution chart -->
+    <div id="chart-legend" style="display:flex; flex-wrap:wrap; gap:10px; margin-top:10px;"></div>
+    <!-- Button to export banned members to PDF/print -->
+    <button id="btn-export-banned" type="button" style="margin-top:15px;">Export Banned Members</button>
+  </section>
+</div>
+
+<script>
+  if (false) {
+  // Data keys used for localStorage
+  const dataKeys = {
+    sanctions: 'ccac_sanctions',
+    meetings: 'ccac_meetings',
+    aob: 'ccac_aob'
+  };
+
+  // Utility functions for loading/saving data
+  function loadData(key) {
+    try {
+      return JSON.parse(localStorage.getItem(key) || '[]');
+    } catch (e) {
+      console.error('Error loading data:', e);
+      return [];
+    }
+  }
+  function saveData(key, value) {
+    localStorage.setItem(key, JSON.stringify(value));
+  }
+
+  // Broadcast update across tabs using a dedicated key
+  function broadcastUpdate(key) {
+    localStorage.setItem('ccac_lastUpdate', JSON.stringify({ key, timestamp: Date.now() }));
+  }
+
+  // Sections mapping
+  const sections = {
+    sanction: document.getElementById('section-sanction'),
+    meetings: document.getElementById('section-meetings'),
+    live: document.getElementById('section-live'),
+    banned: document.getElementById('section-banned'),
+    aob: document.getElementById('section-aob')
+    ,members: document.getElementById('section-members')
+    ,users: document.getElementById('section-users')
+  };
+  // Show a specific section and hide others
+  function showSection(name) {
+    Object.values(sections).forEach(sec => sec.classList.remove('active'));
+    if (sections[name]) {
+      sections[name].classList.add('active');
+    }
+  }
+  // Setup navigation buttons
+  document.getElementById('btn-sanction').onclick = () => { showSection('sanction'); renderTables(); };
+  document.getElementById('btn-meetings').onclick = () => { showSection('meetings'); renderMeetings(); };
+  document.getElementById('btn-live').onclick = () => { showSection('live'); renderTables(); };
+  document.getElementById('btn-banned').onclick = () => { showSection('banned'); renderTables(); };
+  document.getElementById('btn-aob').onclick = () => { showSection('aob'); renderAob(); };
+  // Default section
+  showSection('sanction');
+
+  /*
+   * Sanction form submission
+   * Collects form values and stores them as a new sanction record.
+   */
+  document.getElementById('sanction-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    const sanctions = loadData(dataKeys.sanctions);
+    const name = document.getElementById('memberName').value.trim();
+    const membershipNo = document.getElementById('membershipNo').value.trim();
+    const sanctionLevel = document.getElementById('sanctionLevel').value;
+    const reason = document.getElementById('sanctionReason').value.trim();
+    const details = document.getElementById('sanctionDetails').value.trim();
+    if (!name || !membershipNo || !sanctionLevel || !reason) {
+      alert('Please fill in all required fields.');
+      return;
+    }
+    sanctions.push({
+      id: Date.now(),
+      name,
+      membershipNo,
+      sanctionLevel,
+      reason,
+      details,
+      issuedAt: new Date().toISOString(),
+      status: 'active'
+    });
+    saveData(dataKeys.sanctions, sanctions);
+    broadcastUpdate(dataKeys.sanctions);
+    this.reset();
+    alert('Sanction added successfully.');
+    renderTables();
+  });
+
+  /*
+   * Meetings form submission
+   */
+  document.getElementById('meetings-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    const meetings = loadData(dataKeys.meetings);
+    const title = document.getElementById('meetingTitle').value.trim();
+    const date = document.getElementById('meetingDate').value;
+    const location = document.getElementById('meetingLocation').value.trim();
+    const details = document.getElementById('meetingDetails').value.trim();
+    if (!title || !date) {
+      alert('Please fill in the meeting title and date.');
+      return;
+    }
+    meetings.push({
+      id: Date.now(),
+      title,
+      date,
+      location,
+      details
+    });
+    saveData(dataKeys.meetings, meetings);
+    broadcastUpdate(dataKeys.meetings);
+    this.reset();
+    renderMeetings();
+  });
+
+  /*
+   * AOB form submission
+   */
+  document.getElementById('aob-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    const aobs = loadData(dataKeys.aob);
+    const subject = document.getElementById('aobSubject').value.trim();
+    const details = document.getElementById('aobDetails').value.trim();
+    if (!subject) {
+      alert('Subject is required.');
+      return;
+    }
+    aobs.push({
+      id: Date.now(),
+      subject,
+      details,
+      date: new Date().toISOString()
+    });
+    saveData(dataKeys.aob, aobs);
+    broadcastUpdate(dataKeys.aob);
+    this.reset();
+    renderAob();
+  });
+
+  /*
+   * Render functions for each table
+   */
+  function renderTables() {
+    renderLiveSanctions();
+    renderBannedMembers();
+  }
+  function renderLiveSanctions() {
+    const sanctions = loadData(dataKeys.sanctions);
+    const tbody = document.querySelector('#live-table tbody');
+    tbody.innerHTML = '';
+    sanctions
+      .filter(s => s.status === 'active' && s.sanctionLevel !== 'banned_indefinitely')
+      .forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${item.name}</td>
+          <td>${item.membershipNo}</td>
+          <td>${formatSanction(item.sanctionLevel)}</td>
+          <td>${formatDateTime(item.issuedAt)}</td>
+          <td>${item.reason}</td>
+          <td><button data-id="${item.id}" class="close-sanction">Close</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    // Attach close handler
+    tbody.querySelectorAll('.close-sanction').forEach(btn => {
+      btn.onclick = () => {
+        const id = parseInt(btn.dataset.id);
+        const sanctions = loadData(dataKeys.sanctions);
+        const sanction = sanctions.find(s => s.id === id);
+        if (sanction && confirm('Are you sure you want to close this sanction?')) {
+          sanction.status = 'closed';
+          saveData(dataKeys.sanctions, sanctions);
+          broadcastUpdate(dataKeys.sanctions);
+          renderTables();
+        }
+      };
+    });
+  }
+  function renderBannedMembers() {
+    const sanctions = loadData(dataKeys.sanctions);
+    const tbody = document.querySelector('#banned-table tbody');
+    tbody.innerHTML = '';
+    sanctions
+      .filter(s => s.sanctionLevel === 'banned_indefinitely' && s.status === 'active')
+      .forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${item.name}</td>
+          <td>${item.membershipNo}</td>
+          <td>${item.reason}</td>
+          <td>${formatDateTime(item.issuedAt)}</td>
+          <td><button data-id="${item.id}" class="close-ban">Lift Ban</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    // Attach lift ban handler
+    tbody.querySelectorAll('.close-ban').forEach(btn => {
+      btn.onclick = () => {
+        const id = parseInt(btn.dataset.id);
+        const sanctions = loadData(dataKeys.sanctions);
+        const sanction = sanctions.find(s => s.id === id);
+        if (sanction && confirm('Are you sure you want to lift this ban?')) {
+          sanction.status = 'closed';
+          saveData(dataKeys.sanctions, sanctions);
+          broadcastUpdate(dataKeys.sanctions);
+          renderTables();
+        }
+      };
+    });
+  }
+  function renderMeetings() {
+    const meetings = loadData(dataKeys.meetings);
+    const tbody = document.querySelector('#meetings-table tbody');
+    tbody.innerHTML = '';
+    meetings
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${item.title}</td>
+          <td>${formatDateTime(item.date)}</td>
+          <td>${item.location || ''}</td>
+          <td>${item.details || ''}</td>
+          <td><button data-id="${item.id}" class="delete-meeting">Delete</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    // Attach delete handler
+    tbody.querySelectorAll('.delete-meeting').forEach(btn => {
+      btn.onclick = () => {
+        const id = parseInt(btn.dataset.id);
+        if (confirm('Delete this meeting?')) {
+          let meetings = loadData(dataKeys.meetings);
+          meetings = meetings.filter(m => m.id !== id);
+          saveData(dataKeys.meetings, meetings);
+          broadcastUpdate(dataKeys.meetings);
+          renderMeetings();
+        }
+      };
+    });
+  }
+  function renderAob() {
+    const aobs = loadData(dataKeys.aob);
+    const tbody = document.querySelector('#aob-table tbody');
+    tbody.innerHTML = '';
+    aobs
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${item.subject}</td>
+          <td>${formatDateTime(item.date)}</td>
+          <td>${item.details || ''}</td>
+          <td><button data-id="${item.id}" class="delete-aob">Delete</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    // Attach delete handler
+    tbody.querySelectorAll('.delete-aob').forEach(btn => {
+      btn.onclick = () => {
+        const id = parseInt(btn.dataset.id);
+        if (confirm('Delete this entry?')) {
+          let aobs = loadData(dataKeys.aob);
+          aobs = aobs.filter(a => a.id !== id);
+          saveData(dataKeys.aob, aobs);
+          broadcastUpdate(dataKeys.aob);
+          renderAob();
+        }
+      };
+    });
+  }
+
+  /*
+   * Formatting helpers
+   */
+  function formatSanction(code) {
+    switch (code) {
+      case 'verbal_warning': return 'Verbal Warning';
+      case 'official_warning': return 'Official Warning';
+      case 'suspended_pending_meeting': return 'Suspended pending meeting';
+      case 'banned_indefinitely': return 'Banned indefinitely';
+      default: return code;
+    }
+  }
+  function formatDateTime(iso) {
+    const d = new Date(iso);
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // Listen for storage changes for real-time updates across tabs
+  window.addEventListener('storage', (event) => {
+    if (event.key === 'ccac_lastUpdate') {
+      try {
+        const data = JSON.parse(event.newValue);
+        const key = data.key;
+        if (key === dataKeys.sanctions) {
+          renderTables();
+        } else if (key === dataKeys.meetings) {
+          renderMeetings();
+        } else if (key === dataKeys.aob) {
+          renderAob();
+        }
+      } catch (e) {
+        console.error('Error handling storage event:', e);
+      }
+    }
+  });
+
+  // After all navigation mappings and helper functions have been defined, perform
+  // initialisation. Determine if a user is already logged in and display the
+  // appropriate screen. Placing this here ensures that `sections` has been
+  // declared before `showDashboard()` is invoked.
+  initUsers();
+  {
+    const __currentUser = loadCurrentUser();
+    if (!__currentUser) {
+      showLogin();
+    } else {
+      showDashboard();
+    }
+  }
+
+  // Initial render
+  renderTables();
+  renderMeetings();
+  renderAob();
+  } // end disabled old script
+</script>
+<script>
+  // =========================================
+  // Enhanced dashboard logic with login, roles, audit logs, attachments,
+  // meeting workflow and real-time updates.
+  // =========================================
+  /* Runtime errors will be logged to the console. During development, you can
+     re-enable an alert listener here to surface exceptions. */
+  const dataKeysEx = {
+    sanctions: 'ccac_sanctions',
+    meetings: 'ccac_meetings',
+    aob: 'ccac_aob',
+    users: 'ccac_users',
+    currentUser: 'ccac_currentUser',
+    lastUpdate: 'ccac_lastUpdate'
+  ,members: 'ccac_members'
+  };
+
+  /* ==========================================================================
+   * Firebase support
+   * --------------------------------------------------------------------------
+   * This dashboard can optionally connect to a Firebase Firestore backend in
+   * order to synchronise data across multiple devices in real time. By default
+   * this integration is disabled (useFirebase = false) so the app functions
+   * entirely from localStorage and BroadcastChannel, as in previous versions.
+   *
+   * To enable Firebase sync:
+   *  1. Create a Firebase project and Firestore database.
+   *  2. Replace the empty strings in `firebaseConfig` below with your own
+   *     project settings (apiKey, authDomain, projectId, etc.).
+   *  3. Set `useFirebase` to true. When enabled, the app will initialise
+   *     Firebase on load, subscribe to updates from the Firestore collections
+   *     (`sanctions`, `meetings`, `aob`, `members`, `users`) and write local
+   *     changes back to Firestore. All writes are mirrored to both
+   *     localStorage (for offline support) and Firestore.
+   *
+   * Note: Firestore operations are asynchronous; errors are caught and logged.
+   * When offline or if the Firebase config is incomplete, the app continues to
+   * function using the localStorage-based approach.
+   * ========================================================================== */
+  const useFirebase = false; // Change to true to enable Firestore sync
+  const firebaseConfig = {
+    apiKey: "",
+    authDomain: "",
+    projectId: "",
+    storageBucket: "",
+    messagingSenderId: "",
+    appId: ""
+  };
+  let firestoreDb = null;
+  // Keep track of unsubscribe callbacks so we can detach listeners on logout or reload.
+  let unsubscribeCallbacks = [];
+
+  function initFirebaseIfNeeded() {
+    // Initialise Firebase and Firestore if enabled and not already initialised
+    try {
+      if (!useFirebase) return;
+      // Only initialise if there is a config and firebase has been loaded
+      if (typeof firebase === 'undefined') {
+        console.error('Firebase library not loaded.');
+        return;
+      }
+      if (!firebaseConfig || !firebaseConfig.projectId) {
+        console.warn('Firebase config not provided. Remaining in local mode.');
+        return;
+      }
+      if (!firebase.apps.length) {
+        firebase.initializeApp(firebaseConfig);
+      }
+      firestoreDb = firebase.firestore();
+    } catch (err) {
+      console.error('Error initialising Firebase:', err);
+      firestoreDb = null;
+    }
+  }
+
+  function unsubscribeAll() {
+    // Detach any active Firestore snapshot listeners
+    if (!unsubscribeCallbacks) return;
+    unsubscribeCallbacks.forEach(fn => {
+      try { fn(); } catch (e) { /* no-op */ }
+    });
+    unsubscribeCallbacks = [];
+  }
+
+  function subscribeCollection(collName, onChange) {
+    // Subscribe to a collection and call onChange with the array of docs
+    if (!useFirebase || !firestoreDb) return;
+    try {
+      const unsub = firestoreDb.collection(collName).onSnapshot(snapshot => {
+        const list = [];
+        snapshot.forEach(doc => { list.push(doc.data()); });
+        try {
+          onChange(list);
+        } catch (e) {
+          console.error('Error in collection change handler', collName, e);
+        }
+      }, err => {
+        console.error('Firestore subscription error for', collName, err);
+      });
+      unsubscribeCallbacks.push(unsub);
+    } catch (e) {
+      console.error('Error subscribing to collection', collName, e);
+    }
+  }
+
+  async function syncToFirestore(collName, list) {
+    // Replace the contents of a Firestore collection with the provided list.
+    // Each item must have an `id` property; the document ID will be the string
+    // representation of this id. If id is missing, one will be generated.
+    if (!useFirebase || !firestoreDb) return;
+    try {
+      const batch = firestoreDb.batch();
+      const collRef = firestoreDb.collection(collName);
+      const snapshot = await collRef.get();
+      snapshot.forEach(doc => { batch.delete(doc.ref); });
+      list.forEach(item => {
+        const docId = (item && typeof item.id !== 'undefined') ? String(item.id) : firestoreDb.collection(collName).doc().id;
+        batch.set(collRef.doc(docId), item);
+      });
+      await batch.commit();
+    } catch (e) {
+      console.error('Error syncing collection', collName, e);
+    }
+  }
+
+  function getCollectionNameFromKey(key) {
+    // Map our localStorage keys to Firestore collection names
+    switch (key) {
+      case dataKeysEx.sanctions: return 'sanctions';
+      case dataKeysEx.meetings: return 'meetings';
+      case dataKeysEx.aob: return 'aob';
+      case dataKeysEx.members: return 'members';
+      case dataKeysEx.users: return 'users';
+      default: return null;
+    }
+  }
+
+  // Subscribe to Firestore collections and mirror changes back into localStorage.
+  function subscribeFirebaseCollections() {
+    if (!useFirebase || !firestoreDb) return;
+    // Detach any existing listeners before subscribing again
+    unsubscribeAll();
+    // Sanctions
+    subscribeCollection('sanctions', (list) => {
+      try {
+        localStorage.setItem(dataKeysEx.sanctions, JSON.stringify(list));
+        renderTablesEx();
+      } catch (e) {
+        console.error('Error handling sanctions snapshot', e);
+      }
+    });
+    // Meetings
+    subscribeCollection('meetings', (list) => {
+      try {
+        localStorage.setItem(dataKeysEx.meetings, JSON.stringify(list));
+        renderMeetingsEx();
+      } catch (e) {
+        console.error('Error handling meetings snapshot', e);
+      }
+    });
+    // AOB
+    subscribeCollection('aob', (list) => {
+      try {
+        localStorage.setItem(dataKeysEx.aob, JSON.stringify(list));
+        renderAobEx();
+      } catch (e) {
+        console.error('Error handling AOB snapshot', e);
+      }
+    });
+    // Members
+    subscribeCollection('members', (list) => {
+      try {
+        localStorage.setItem(dataKeysEx.members, JSON.stringify(list));
+        renderMembersEx();
+        updateMembersDatalist();
+      } catch (e) {
+        console.error('Error handling members snapshot', e);
+      }
+    });
+    // Users
+    subscribeCollection('users', (list) => {
+      try {
+        localStorage.setItem(dataKeysEx.users, JSON.stringify(list));
+        renderUsersEx();
+      } catch (e) {
+        console.error('Error handling users snapshot', e);
+      }
+    });
+  }
+
+  // Default users for demonstration. In production, replace with real auth.
+  const defaultUsers = [
+    // Built‑in administrator account. This account has fixed credentials
+    // and will always be created if no users exist in storage. It uses
+    // username/password instead of email for login.
+    { username: 'CCACadmin', password: 'CCAC2027', role: 'admin', displayName: 'Admin', active: true }
+  ];
+
+  function initUsers() {
+    // Initialise the users list. If no users are stored, seed with the default admin.
+    let users;
+    try {
+      users = JSON.parse(localStorage.getItem(dataKeysEx.users) || '[]');
+    } catch (e) {
+      users = [];
+    }
+    // Determine the expected length of hashed passwords. The simpleHash function
+    // returns a fixed-length hex string for any input. We compute this once
+    // using an empty string to avoid repeatedly hashing when initialising
+    // default users or migrating existing users. If a stored password does
+    // not match this length, it is assumed to be plain text and will be
+    // hashed.
+    // Compute the hash length using a representative string. simpleHash returns
+    // a consistent 8‑character hex string for non‑empty input, whereas
+    // hashing an empty string would produce a shorter length (e.g. '1505').
+    // By using a non‑empty input here, we correctly capture the length of
+    // hashed passwords stored by this application.
+    const HASH_LENGTH = hashPassword('test-string').length;
+    if (!users || users.length === 0) {
+      // If no users exist, seed with the built‑in admin only.
+      // Ensure the built-in admin password is stored as a hash
+      const hashedAdmin = hashPassword(defaultUsers[0].password);
+      defaultUsers[0].password = hashedAdmin;
+      users = defaultUsers.slice();
+    } else {
+      // Migrate any old user objects that used 'email' to have a 'username'.
+      users.forEach(u => {
+        if (!u.username && u.email) {
+          const parts = u.email.split('@');
+          u.username = parts[0] ? parts[0].trim() : u.email.trim();
+        }
+        // Convert plain-text passwords to hashed passwords for existing users.  The
+        // simpleHash used by hashPassword produces an 8-character hex string. To avoid
+        // repeatedly hashing already-hashed passwords (which would break the ability
+        // to log in), only hash the password if its length differs from the
+        // expected HASH_LENGTH. This migration will ensure that any user with a
+        // plain-text password is upgraded to a hashed password exactly once.
+        if (u.password && u.password.length !== HASH_LENGTH) {
+          u.password = hashPassword(u.password);
+        }
+      });
+      // Remove any extra admin accounts so that only the built‑in admin remains. Any user with
+      // role 'admin' whose username does not match the default admin username will be filtered out.
+      const defaultUser = defaultUsers[0];
+      users = users.filter(u => {
+        if (!u.role) return true;
+        const role = u.role.toLowerCase();
+        if (role !== 'admin') return true;
+        // Keep if username matches the built‑in admin
+        return u.username && u.username.toLowerCase() === defaultUser.username.toLowerCase();
+      });
+      // Ensure the built‑in admin user exists. If not present, add it.
+      const exists = users.some(u => u.username && u.username.toLowerCase() === defaultUser.username.toLowerCase());
+      if (!exists) {
+        users.unshift(Object.assign({}, defaultUser));
+      }
+    }
+    localStorage.setItem(dataKeysEx.users, JSON.stringify(users));
+  }
+
+  function loadUsers() {
+    try {
+      return JSON.parse(localStorage.getItem(dataKeysEx.users) || '[]');
+    } catch (e) { console.error('Error loading users', e); return []; }
+  }
+
+  function saveUsers(users) {
+    localStorage.setItem(dataKeysEx.users, JSON.stringify(users));
+    // Also sync to Firestore if enabled
+    const collName = getCollectionNameFromKey(dataKeysEx.users);
+    if (collName) { syncToFirestore(collName, users); }
+  }
+
+  function loadCurrentUser() {
+    try {
+      return JSON.parse(localStorage.getItem(dataKeysEx.currentUser) || 'null');
+    } catch (e) { return null; }
+  }
+  function saveCurrentUser(user) {
+    if (user) {
+      localStorage.setItem(dataKeysEx.currentUser, JSON.stringify(user));
+    } else {
+      localStorage.removeItem(dataKeysEx.currentUser);
+    }
+  }
+
+  // Data helpers for sanctions/meetings/aob
+  function loadDataEx(key) {
+    try {
+      return JSON.parse(localStorage.getItem(key) || '[]');
+    } catch (e) { console.error('Error loading data:', e); return []; }
+  }
+  function saveDataEx(key, value) {
+    localStorage.setItem(key, JSON.stringify(value));
+    // If Firebase sync is enabled, update the corresponding Firestore collection.
+    const collName = getCollectionNameFromKey(key);
+    if (collName) {
+      syncToFirestore(collName, value);
+    }
+  }
+
+  // Members helpers
+  function loadMembers() {
+    try {
+      return JSON.parse(localStorage.getItem(dataKeysEx.members) || '[]');
+    } catch (e) { console.error('Error loading members:', e); return []; }
+  }
+  // Simple hash function for audit trail (djb2 algorithm). This provides a basic
+  // checksum to detect tampering. It is not cryptographically secure but
+  // sufficient to demonstrate tamper detection in the audit log. Each update's
+  // hash is calculated based on the previous hash and the update contents.
+  function simpleHash(str) {
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) + hash) + str.charCodeAt(i);
+      // Convert to 32bit integer
+      hash = hash & 0xffffffff;
+    }
+    return (hash >>> 0).toString(16);
+  }
+
+  // Compute the hash for an update given its properties and the previous hash.
+  function computeUpdateHash(action, changedBy, changedAt, note, prevHash) {
+    const base = `${prevHash}|${action}|${changedBy}|${changedAt}|${note || ''}`;
+    return simpleHash(base);
+  }
+
+  /**
+   * Simple password hashing wrapper. Uses the existing simpleHash function to
+   * generate a hex string from the password. While not cryptographically
+   * strong, this is better than storing plain-text passwords.
+   *
+   * @param {string} pw The plain text password to hash
+   * @returns {string} A hashed representation of the password
+   */
+  function hashPassword(pw) {
+    return simpleHash(pw);
+  }
+
+  /**
+   * Reset or start the inactivity timer. When triggered, the current user is
+   * logged out and returned to the login screen. Idle timeout is set to
+   * 15 minutes (900,000 ms).
+   */
+  function resetIdleTimer() {
+    if (idleTimer) {
+      clearTimeout(idleTimer);
+    }
+    idleTimer = setTimeout(() => {
+      alert('Session timed out due to inactivity.');
+      saveCurrentUser(null);
+      showLogin();
+    }, 15 * 60 * 1000);
+  }
+
+  // Verify the audit trail of a sanction. Returns true if all hashes match
+  // sequentially, otherwise false. This helps detect tampering with past
+  // updates. It expects each update to have `hash` and `prevHash` fields.
+  function verifyAuditTrail(updates) {
+    let expectedPrev = '0';
+    for (let i = 0; i < updates.length; i++) {
+      const up = updates[i];
+      const computed = computeUpdateHash(up.action, up.changedBy, up.changedAt, up.note, expectedPrev);
+      if (up.prevHash !== expectedPrev || up.hash !== computed) {
+        return false;
+      }
+      expectedPrev = up.hash;
+    }
+    return true;
+  }
+  function saveMembers(members) {
+    localStorage.setItem(dataKeysEx.members, JSON.stringify(members));
+    // Sync to Firestore if enabled
+    const collName = getCollectionNameFromKey(dataKeysEx.members);
+    if (collName) { syncToFirestore(collName, members); }
+  }
+  // Update datalist for member names
+  function updateMembersDatalist() {
+    const list = document.getElementById('membersList');
+    if (!list) return;
+    list.innerHTML = '';
+    const members = loadMembers();
+    members.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.name;
+      list.appendChild(opt);
+    });
+  }
+
+  // Broadcast updates across tabs/windows
+  // Initialize broadcast channel. Not all browsers/environments support the BroadcastChannel API
+  // (e.g. some file:// contexts). Wrap creation in try/catch and fall back to a dummy object
+  // that simply no-ops on postMessage. This prevents runtime errors that would otherwise
+  // stop the rest of the script from executing.
+  let bc;
+  try {
+    bc = new BroadcastChannel('ccac_channel');
+  } catch (e) {
+    // Provide a fallback object with a stubbed postMessage method so calls
+    // to bc.postMessage() do not throw. No cross‑tab communication will occur
+    // when using this fallback.
+    bc = { postMessage: () => {} };
+  }
+
+  // --- Security and session management variables ---
+  // Number of failed login attempts in this session
+  let loginAttempts = 0;
+  // Flag to lock out further login attempts after too many failures
+  let loginLocked = false;
+  // Timer for inactivity logout
+  let idleTimer = null;
+  function broadcastUpdateEx(key) {
+    const data = { key, timestamp: Date.now() };
+    localStorage.setItem(dataKeysEx.lastUpdate, JSON.stringify(data));
+    bc.postMessage(data);
+  }
+  // Attach message handler only if the BroadcastChannel API is available. When using the
+  // fallback dummy object the onmessage property will be undefined, so this block
+  // will be skipped and no handler will be attached.
+  if (bc && typeof bc.onmessage !== 'undefined') {
+    bc.onmessage = (event) => {
+      const { key } = event.data;
+      if (key === dataKeysEx.sanctions) {
+        renderTablesEx();
+      } else if (key === dataKeysEx.meetings) {
+        renderMeetingsEx();
+      } else if (key === dataKeysEx.aob) {
+        renderAobEx();
+      } else if (key === dataKeysEx.members) {
+        renderMembersEx();
+        updateMembersDatalist();
+      } else if (key === dataKeysEx.users) {
+        renderUsersEx();
+      }
+    };
+  }
+
+  // Show/hide login vs dashboard
+  function showLogin() {
+    document.getElementById('login-screen').style.display = 'block';
+    document.getElementById('container').style.display = 'none';
+    updateUserInfo();
+    // Detach any Firestore subscriptions when returning to login
+    unsubscribeAll();
+  }
+  function showDashboard() {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('container').style.display = 'block';
+    updateUserInfo();
+    showSection('sanction');
+    renderTablesEx();
+    renderMeetingsEx();
+    renderAobEx();
+    // If admin, render users table
+    const user = loadCurrentUser();
+    if (user && user.role === 'admin') {
+      renderUsersEx();
+    }
+    // Show or hide navigation buttons based on user role. Bailiffs see only base sections.
+    {
+      const btnDashboard = document.getElementById('btn-dashboard');
+      const btnUsers = document.getElementById('btn-users');
+      if (btnDashboard && btnUsers) {
+        const role = user && user.role ? user.role.toLowerCase().trim() : '';
+        // Show dashboard for admin, official, chairman; hide otherwise
+        if (role === 'admin' || role === 'official' || role === 'chairman') {
+          btnDashboard.style.display = '';
+        } else {
+          btnDashboard.style.display = 'none';
+        }
+        // Show users button only for admin
+        if (role === 'admin') {
+          btnUsers.style.display = '';
+        } else {
+          btnUsers.style.display = 'none';
+        }
+      }
+    }
+    // Initialise Firebase and subscribe to collections if enabled
+    initFirebaseIfNeeded();
+    subscribeFirebaseCollections();
+  }
+
+  // Update header
+  function updateUserInfo() {
+    const user = loadCurrentUser();
+    const userInfoDiv = document.getElementById('user-info');
+    if (user) {
+      userInfoDiv.innerHTML = `<span>Welcome, ${user.displayName} (${user.role})</span><button id="logout-btn">Logout</button>`;
+      document.getElementById('logout-btn').onclick = () => {
+        saveCurrentUser(null);
+        showLogin();
+      };
+    } else {
+      userInfoDiv.innerHTML = '';
+    }
+  }
+
+  /**
+   * Determine whether the currently logged in user is allowed to close sanctions or lift bans.
+   *
+   * Historically roles were compared against a fixed set of strings (admin, official, chairman).
+   * However, depending on how user objects are stored (e.g. accidental whitespace or case differences),
+   * strict comparisons may incorrectly deny permission to users who should have it. To make the
+   * permission check more robust, treat any non-bailiff user as authorised.
+   *
+   * @returns {boolean} true if the current user may close sanctions/lift bans
+   */
+  function canClose() {
+    const user = loadCurrentUser();
+    if (!user) return false;
+    // Normalise the role to lowercase and trim whitespace. Only bailiffs are restricted.
+    const role = (user.role || '').toLowerCase().trim();
+    return role !== 'bailiff';
+  }
+
+  // -------------------------------------------------------------------------
+  // Initialisation
+  // Previously the app waited for the DOMContentLoaded event before calling
+  // initUsers(). However, because this script is at the end of the HTML file,
+  // the DOMContentLoaded event may have already fired, preventing the handler
+  // from running. To ensure that the built‑in admin account is always
+  // initialised, call initUsers() immediately when the script is executed.
+  // Then determine whether to show the login form or the dashboard based on
+  // whether a user is already stored in currentUser.
+  // Defer initialisation until after the navigation mappings have been defined. The
+  // call to showDashboard() references the `sections` constant, which must be
+  // declared before invocation. The actual initialisation call is placed near
+  // the end of this script.
+
+  // Login form event
+  document.getElementById('login-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const username = document.getElementById('loginUsername').value.trim().toLowerCase();
+    const password = document.getElementById('loginPassword').value;
+    if (loginLocked) {
+      alert('Too many failed login attempts. Please reload the page to try again.');
+      return;
+    }
+    const users = loadUsers();
+    // Compute hash of provided password for comparison
+    // Hash the provided password. To support older data where passwords may have been
+    // double‑hashed (due to previous migrations) or even stored in plain text, compute
+    // multiple variants: the single hash, a double hash and triple hash. During the
+    // user lookup we will test all of these possibilities along with the plain text.
+    const hashed1 = hashPassword(password);
+    const hashed2 = hashPassword(hashed1);
+    const hashed3 = hashPassword(hashed2);
+    // Find user matching the provided username and any of the possible password forms.
+    let user = users.find(u => {
+      if (!u.username) return false;
+      const unameMatch = u.username.toLowerCase() === username;
+      if (!unameMatch) return false;
+      const stored = u.password;
+      // If the stored password matches any of the hashed variants or the plain text, accept it.
+      return stored === hashed1 || stored === hashed2 || stored === hashed3 || stored === password;
+    });
+    // If no matching user is found, attempt to reinitialise the user list. This guards
+    // against a scenario where localStorage has been cleared or never initialised.
+    if (!user) {
+      try {
+        initUsers();
+        const refreshed = loadUsers();
+        user = refreshed.find(u => {
+          if (!u.username) return false;
+          const unameMatch = u.username.toLowerCase() === username;
+          if (!unameMatch) return false;
+          const stored = u.password;
+          return stored === hashed1 || stored === hashed2 || stored === hashed3 || stored === password;
+        });
+      } catch (ex) {
+        // Ignore errors during reinitialisation; fallback to no user
+      }
+    }
+
+    // As a final fallback, if the user is still not found and the credentials
+    // correspond to the built‑in administrator account, allow login by
+    // constructing a user object from the defaultUsers array. This ensures
+    // the administrator can always log in even if the users list has been
+    // wiped or was never initialised correctly.
+    if (!user) {
+      try {
+        const adminDefault = defaultUsers && defaultUsers[0];
+        if (adminDefault) {
+          const adminUsername = (adminDefault.username || '').toLowerCase();
+          const adminPassword = adminDefault.password;
+          if (username === adminUsername) {
+            // Check against the plain and hashed variants of the admin password
+            const matchAdmin = (password === adminPassword) || (hashed1 === adminPassword) || (hashed2 === adminPassword) || (hashed3 === adminPassword);
+            if (matchAdmin) {
+              // Create a copy of the admin object to avoid mutating defaultUsers
+              user = Object.assign({}, adminDefault);
+              // Persist this user into the stored users list if it does not already exist
+              let storedUsers = loadUsers();
+              const existsAdmin = storedUsers.some(u => u.username && u.username.toLowerCase() === adminUsername);
+              if (!existsAdmin) {
+                storedUsers.unshift(user);
+                saveUsers(storedUsers);
+              }
+            }
+          }
+        }
+      } catch (ex) {
+        // Ignore fallback errors
+      }
+    }
+    if (user) {
+      if (user.active === false) {
+        alert('This account is disabled.');
+        return;
+      }
+      // Successful login resets attempt counter and lock flag
+      loginAttempts = 0;
+      loginLocked = false;
+      saveCurrentUser(user);
+      this.reset();
+      // Request permission for notifications upon login
+      requestNotificationPermission();
+      // Start the idle timer
+      resetIdleTimer();
+      showDashboard();
+    } else {
+      loginAttempts++;
+      if (loginAttempts >= 5) {
+        loginLocked = true;
+        alert('Too many failed login attempts. Please reload the page to try again.');
+      } else {
+        alert('Invalid credentials. Please try again.');
+      }
+    }
+  });
+
+  // Navigation mapping
+  const sections = {
+    sanction: document.getElementById('section-sanction'),
+    meetings: document.getElementById('section-meetings'),
+    live: document.getElementById('section-live'),
+    banned: document.getElementById('section-banned'),
+    aob: document.getElementById('section-aob'),
+    users: document.getElementById('section-users'),
+    dashboard: document.getElementById('section-dashboard')
+  };
+  function showSection(name) {
+    // Hide all sections
+    Object.values(sections).forEach(sec => sec.classList.remove('active'));
+    // Activate the requested section and scroll it into view. Scrolling helps
+    // users immediately see the content they selected rather than having to
+    // manually scroll down the page.
+    const target = sections[name];
+    if (target) {
+      target.classList.add('active');
+      // Smoothly scroll the top of the section into view. Use a short timeout
+      // to ensure the section is rendered before scrolling. Without the delay,
+      // some browsers may ignore the scroll because layout has not been updated.
+      setTimeout(() => {
+        try {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } catch (ex) {
+          // Fallback to instant scroll for browsers/environments that do not
+          // support the smooth scroll option
+          try { target.scrollIntoView(true); } catch {}
+        }
+      }, 0);
+    }
+  }
+  document.getElementById('btn-sanction').onclick = () => { showSection('sanction'); renderTablesEx(); };
+  document.getElementById('btn-meetings').onclick = () => { showSection('meetings'); renderMeetingsEx(); };
+  document.getElementById('btn-live').onclick = () => { showSection('live'); renderTablesEx(); };
+  document.getElementById('btn-banned').onclick = () => { showSection('banned'); renderTablesEx(); };
+  document.getElementById('btn-aob').onclick = () => { showSection('aob'); renderAobEx(); };
+
+  // Attach live search event listeners for live and banned sections
+  const liveSearchEl = document.getElementById('live-search');
+  if (liveSearchEl) {
+    liveSearchEl.addEventListener('input', () => {
+      // Re-render live sanctions whenever the search query changes
+      renderLiveSanctionsEx();
+    });
+  }
+  const bannedSearchEl = document.getElementById('banned-search');
+  if (bannedSearchEl) {
+    bannedSearchEl.addEventListener('input', () => {
+      // Re-render banned members list whenever the search query changes
+      renderBannedMembersEx();
+    });
+  }
+
+  // Dashboard overview button - only for admin, official and chairman. Displays statistics and charts.
+  document.getElementById('btn-dashboard').onclick = () => {
+    const user = loadCurrentUser();
+    if (!user || (user.role !== 'admin' && user.role !== 'official' && user.role !== 'chairman')) {
+      alert('You do not have permission to view the dashboard.');
+      return;
+    }
+    showSection('dashboard');
+    renderDashboard();
+  };
+  // User management button - only for admin
+  document.getElementById('btn-users').onclick = () => {
+    const user = loadCurrentUser();
+    if (!user || user.role !== 'admin') {
+      alert('You do not have permission to manage users.');
+      return;
+    }
+    showSection('users');
+    renderUsersEx();
+  };
+
+  // Bind export banned members button to export function
+  const exportBtn = document.getElementById('btn-export-banned');
+  if (exportBtn) {
+    exportBtn.onclick = () => {
+      exportBannedMembers();
+    };
+  }
+
+  // Sanction form submission
+  document.getElementById('sanction-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const user = loadCurrentUser();
+    if (!user) { alert('Please login.'); return; }
+    const sanctions = loadDataEx(dataKeysEx.sanctions);
+    const name = document.getElementById('memberName').value.trim();
+    // Membership number has been removed; only use member name
+    const sanctionLevel = document.getElementById('sanctionLevel').value;
+    const reason = document.getElementById('sanctionReason').value.trim();
+    const details = document.getElementById('sanctionDetails').value.trim();
+    if (!name || !sanctionLevel || !reason) {
+      alert('Please fill in all required fields.');
+      return;
+    }
+    const caseId = 'CASE-' + Date.now();
+    // Build the initial update for this case. Include a hash and prevHash for tamper detection.
+    const createdAt = new Date().toISOString();
+    const initialPrevHash = '0';
+    const initialHash = computeUpdateHash('created', user.username, createdAt, '', initialPrevHash);
+    const newSanction = {
+      id: Date.now(),
+      caseId,
+      name,
+      sanctionLevel,
+      reason,
+      details,
+      issuedAt: createdAt,
+      status: 'active',
+      createdBy: user.username,
+      createdByName: user.displayName,
+      createdByRole: user.role,
+      updates: [ {
+        action: 'created',
+        changedBy: user.username,
+        changedByName: user.displayName,
+        changedByRole: user.role,
+        changedAt: createdAt,
+        note: '',
+        prevHash: initialPrevHash,
+        hash: initialHash
+      } ],
+      attachments: []
+    };
+    sanctions.push(newSanction);
+    saveDataEx(dataKeysEx.sanctions, sanctions);
+    broadcastUpdateEx(dataKeysEx.sanctions);
+    this.reset();
+    alert('Sanction added successfully.');
+    renderTablesEx();
+  });
+
+  // Meetings form submission
+  document.getElementById('meetings-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const user = loadCurrentUser();
+    if (!user) { alert('Please login.'); return; }
+    const meetings = loadDataEx(dataKeysEx.meetings);
+    const title = document.getElementById('meetingTitle').value.trim();
+    const date = document.getElementById('meetingDate').value;
+    const time = document.getElementById('meetingTime').value;
+    const location = document.getElementById('meetingLocation').value.trim();
+    const details = document.getElementById('meetingDetails').value.trim();
+    if (!title || !date || !time) {
+      alert('Please fill in the meeting title, date and time.');
+      return;
+    }
+    // Combine date and time into an ISO string. Fall back to current time if parsing fails.
+    let dateTimeIso = '';
+    try {
+      // Add seconds if not provided by input
+      const combined = `${date}T${time}`;
+      dateTimeIso = new Date(combined).toISOString();
+    } catch (err) {
+      dateTimeIso = new Date().toISOString();
+    }
+    const meeting = { id: Date.now(), title, date: dateTimeIso, location, details, status: 'upcoming', outcomes: [] };
+    meetings.push(meeting);
+    saveDataEx(dataKeysEx.meetings, meetings);
+    broadcastUpdateEx(dataKeysEx.meetings);
+    this.reset();
+    renderMeetingsEx();
+  });
+
+  // AOB form submission
+  document.getElementById('aob-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const user = loadCurrentUser();
+    if (!user) { alert('Please login.'); return; }
+    const aobs = loadDataEx(dataKeysEx.aob);
+    const subject = document.getElementById('aobSubject').value.trim();
+    const details = document.getElementById('aobDetails').value.trim();
+    if (!subject) {
+      alert('Subject is required.');
+      return;
+    }
+    aobs.push({ id: Date.now(), subject, details, date: new Date().toISOString() });
+    saveDataEx(dataKeysEx.aob, aobs);
+    broadcastUpdateEx(dataKeysEx.aob);
+    this.reset();
+    renderAobEx();
+  });
+
+
+  // User form submission (add new user) - admin only
+  document.getElementById('user-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const displayName = document.getElementById('newUserDisplayName').value.trim();
+    const username = document.getElementById('newUserUsername').value.trim().toLowerCase();
+    const password = document.getElementById('newUserPassword').value;
+    const role = document.getElementById('newUserRole').value;
+    if (!displayName || !username || !password) {
+      alert('Please fill in all user fields.');
+      return;
+    }
+    const users = loadUsers();
+    if (users.some(u => u.username && u.username.toLowerCase() === username)) {
+      alert('A user with this username already exists.');
+      return;
+    }
+    // Hash the password before saving. This ensures login comparisons work correctly.
+    const hashedPassword = hashPassword(password);
+    users.push({ username, password: hashedPassword, role, displayName, active: true });
+    saveUsers(users);
+    broadcastUpdateEx(dataKeysEx.users);
+    this.reset();
+    renderUsersEx();
+  });
+
+  // Rendering functions
+  function renderTablesEx() {
+    renderLiveSanctionsEx();
+    renderBannedMembersEx();
+  }
+
+  function showSuspendedAlert(list) {
+    const sectionLive = document.getElementById('section-live');
+    let existing = document.getElementById('suspended-alert');
+    if (existing) existing.remove();
+    if (list.length > 0) {
+      const div = document.createElement('div');
+      div.id = 'suspended-alert';
+      div.style.backgroundColor = '#ffecb3';
+      div.style.padding = '10px';
+      div.style.marginBottom = '10px';
+      div.style.border = '1px solid #f0c14b';
+      div.textContent = `Cases suspended pending meeting requiring decision: ${list.length}`;
+      sectionLive.insertBefore(div, sectionLive.querySelector('table'));
+    }
+  }
+
+  function renderLiveSanctionsEx() {
+    const sanctions = loadDataEx(dataKeysEx.sanctions);
+    const tbody = document.querySelector('#live-table tbody');
+    tbody.innerHTML = '';
+    const suspendedList = [];
+    // Read search term from the live-search input
+    const searchEl = document.getElementById('live-search');
+    const searchTerm = searchEl ? searchEl.value.trim().toLowerCase() : '';
+    // Filter active (non-indefinitely banned) sanctions
+    const activeSanctions = sanctions.filter(s => s.status === 'active' && s.sanctionLevel !== 'banned_indefinitely');
+    const filtered = activeSanctions.filter(item => {
+      return !searchTerm || (item.name && item.name.toLowerCase().includes(searchTerm));
+    });
+    filtered.forEach(item => {
+      if (item.sanctionLevel === 'suspended_pending_meeting') suspendedList.push(item);
+      const tr = document.createElement('tr');
+      if (item.sanctionLevel === 'suspended_pending_meeting') tr.classList.add('suspended-case');
+      tr.innerHTML = `
+        <td>${item.name}</td>
+        <td>${formatSanctionEx(item.sanctionLevel)}</td>
+        <td>${formatDateTimeEx(item.issuedAt)}</td>
+        <td>${item.reason}</td>
+        <td>
+          <button class="view-history" data-id="${item.id}">History</button>
+          <button class="upload-attachment" data-id="${item.id}">Add Attachment</button>
+          <button class="close-sanction" data-id="${item.id}">Close</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+    showSuspendedAlert(suspendedList);
+    // Attach a single click handler on the tbody for dynamic rows. This approach avoids
+    // issues where buttons on later rows become unresponsive due to inserted
+    // alerts or other DOM changes. Determine which button was clicked by
+    // inspecting the class name of the target element.
+    tbody.onclick = (ev) => {
+      const target = ev.target;
+      if (!(target instanceof HTMLElement)) return;
+      const idStr = target.getAttribute('data-id');
+      const id = idStr ? parseInt(idStr) : NaN;
+      if (target.classList.contains('view-history')) {
+        if (!isNaN(id)) openCaseDetailsEx(id);
+      } else if (target.classList.contains('upload-attachment')) {
+        if (isNaN(id)) return;
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.onchange = (ev2) => {
+          const f = ev2.target.files[0];
+          if (f) handleFileUploadEx(id, f);
+        };
+        fileInput.click();
+      } else if (target.classList.contains('close-sanction')) {
+        if (!canClose()) {
+          alert('You do not have permission to close sanctions.');
+          return;
+        }
+        if (isNaN(id)) return;
+        const sanctions = loadDataEx(dataKeysEx.sanctions);
+        const sanction = sanctions.find(s => s.id === id);
+        if (sanction && confirm('Are you sure you want to close this sanction?')) {
+          sanction.status = 'closed';
+          const user = loadCurrentUser();
+          const changedAt = new Date().toISOString();
+          const prev = sanction.updates[sanction.updates.length - 1];
+          const prevHash = prev ? prev.hash : '0';
+          const newHash = computeUpdateHash('status_changed', user.username, changedAt, 'Sanction closed', prevHash);
+          sanction.updates.push({
+            action: 'status_changed',
+            changedBy: user.username,
+            changedByName: user.displayName,
+            changedByRole: user.role,
+            changedAt: changedAt,
+            note: 'Sanction closed',
+            prevHash: prevHash,
+            hash: newHash
+          });
+          saveDataEx(dataKeysEx.sanctions, sanctions);
+          broadcastUpdateEx(dataKeysEx.sanctions);
+          renderTablesEx();
+        }
+      }
+    };
+  }
+
+  function renderBannedMembersEx() {
+    const sanctions = loadDataEx(dataKeysEx.sanctions);
+    const tbody = document.querySelector('#banned-table tbody');
+    tbody.innerHTML = '';
+    // Read search term from banned-search input
+    const bannedSearch = document.getElementById('banned-search');
+    const searchTerm = bannedSearch ? bannedSearch.value.trim().toLowerCase() : '';
+    const bannedList = sanctions.filter(s => s.sanctionLevel === 'banned_indefinitely' && s.status === 'active');
+    const filtered = bannedList.filter(item => {
+      return !searchTerm || (item.name && item.name.toLowerCase().includes(searchTerm));
+    });
+    filtered.forEach(item => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${item.name}</td>
+        <td>${item.reason}</td>
+        <td>${formatDateTimeEx(item.issuedAt)}</td>
+        <td>
+          <button class="view-history" data-id="${item.id}">History</button>
+          <button class="upload-attachment" data-id="${item.id}">Add Attachment</button>
+          <button class="close-ban" data-id="${item.id}">Lift Ban</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+    // Use event delegation for banned members table
+    tbody.onclick = (ev) => {
+      const target = ev.target;
+      if (!(target instanceof HTMLElement)) return;
+      const idStr = target.getAttribute('data-id');
+      const id = idStr ? parseInt(idStr) : NaN;
+      if (target.classList.contains('view-history')) {
+        if (!isNaN(id)) openCaseDetailsEx(id);
+      } else if (target.classList.contains('upload-attachment')) {
+        if (isNaN(id)) return;
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.onchange = (ev2) => {
+          const f = ev2.target.files[0];
+          if (f) handleFileUploadEx(id, f);
+        };
+        fileInput.click();
+      } else if (target.classList.contains('close-ban')) {
+        if (!canClose()) {
+          alert('You do not have permission to lift bans.');
+          return;
+        }
+        if (isNaN(id)) return;
+        const sanctions = loadDataEx(dataKeysEx.sanctions);
+        const sanction = sanctions.find(s => s.id === id);
+        if (sanction && confirm('Are you sure you want to lift this ban?')) {
+          sanction.status = 'closed';
+          const user = loadCurrentUser();
+          const changedAt = new Date().toISOString();
+          const prev = sanction.updates[sanction.updates.length - 1];
+          const prevHash = prev ? prev.hash : '0';
+          const newHash = computeUpdateHash('status_changed', user.username, changedAt, 'Ban lifted', prevHash);
+          sanction.updates.push({
+            action: 'status_changed',
+            changedBy: user.username,
+            changedByName: user.displayName,
+            changedByRole: user.role,
+            changedAt: changedAt,
+            note: 'Ban lifted',
+            prevHash: prevHash,
+            hash: newHash
+          });
+          saveDataEx(dataKeysEx.sanctions, sanctions);
+          broadcastUpdateEx(dataKeysEx.sanctions);
+          renderTablesEx();
+        }
+      }
+    };
+  }
+
+  function renderMeetingsEx() {
+    const meetings = loadDataEx(dataKeysEx.meetings);
+    const tbody = document.querySelector('#meetings-table tbody');
+    tbody.innerHTML = '';
+    const now = new Date();
+    const nextWeek = new Date(now.getTime() + 7*24*60*60*1000);
+    let upcomingCount = 0;
+    meetings.sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(item => {
+      const d = new Date(item.date);
+      if (item.status === 'upcoming' && d <= nextWeek) upcomingCount++;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${item.title}</td>
+        <td>${formatDateTimeEx(item.date)}</td>
+        <td>${item.location || ''}</td>
+        <td>${item.details || ''}</td>
+        <td>
+          ${item.status === 'upcoming' ? '<button class="complete-meeting" data-id="'+item.id+'">Complete</button>' : '<em>Completed</em>'}
+          <button class="delete-meeting" data-id="${item.id}">Delete</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+    let remindDiv = document.getElementById('meeting-reminder');
+    const section = document.getElementById('section-meetings');
+    if (remindDiv) remindDiv.remove();
+    if (upcomingCount > 0) {
+      remindDiv = document.createElement('div');
+      remindDiv.id = 'meeting-reminder';
+      remindDiv.style.backgroundColor = '#d0f0c0';
+      remindDiv.style.padding = '10px';
+      remindDiv.style.marginBottom = '10px';
+      remindDiv.style.border = '1px solid #8bc34a';
+      remindDiv.textContent = `You have ${upcomingCount} meeting(s) within the next 7 days.`;
+      section.insertBefore(remindDiv, section.querySelector('form'));
+      // Send a notification about upcoming meetings
+      try {
+        sendNotification('Meeting Reminder', `You have ${upcomingCount} meeting(s) within the next 7 days.`);
+      } catch (e) {
+        console.error('Notification error:', e);
+      }
+    }
+    // delete
+    tbody.querySelectorAll('.delete-meeting').forEach(btn => {
+      btn.onclick = () => {
+        const id = parseInt(btn.dataset.id);
+        if (confirm('Delete this meeting?')) {
+          let meetings = loadDataEx(dataKeysEx.meetings);
+          meetings = meetings.filter(m => m.id !== id);
+          saveDataEx(dataKeysEx.meetings, meetings);
+          broadcastUpdateEx(dataKeysEx.meetings);
+          renderMeetingsEx();
+        }
+      };
+    });
+    // complete
+    tbody.querySelectorAll('.complete-meeting').forEach(btn => {
+      btn.onclick = () => {
+        const id = parseInt(btn.dataset.id);
+        let meetings = loadDataEx(dataKeysEx.meetings);
+        const meeting = meetings.find(m => m.id === id);
+        if (!meeting) return;
+        const outcome = prompt('Enter meeting outcome / notes:', '');
+        meeting.status = 'completed';
+        if (outcome && outcome.trim() !== '') {
+          meeting.outcomes.push({ note: outcome.trim(), recordedAt: new Date().toISOString(), recordedBy: loadCurrentUser().username });
+        }
+        saveDataEx(dataKeysEx.meetings, meetings);
+        broadcastUpdateEx(dataKeysEx.meetings);
+        renderMeetingsEx();
+      };
+    });
+  }
+
+  function renderAobEx() {
+    const aobs = loadDataEx(dataKeysEx.aob);
+    const tbody = document.querySelector('#aob-table tbody');
+    tbody.innerHTML = '';
+    aobs.sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(item => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${item.subject}</td>
+        <td>${formatDateTimeEx(item.date)}</td>
+        <td>${item.details || ''}</td>
+        <td><button class="delete-aob" data-id="${item.id}">Delete</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('.delete-aob').forEach(btn => {
+      btn.onclick = () => {
+        const id = parseInt(btn.dataset.id);
+        if (confirm('Delete this entry?')) {
+          let aobs = loadDataEx(dataKeysEx.aob);
+          aobs = aobs.filter(a => a.id !== id);
+          saveDataEx(dataKeysEx.aob, aobs);
+          broadcastUpdateEx(dataKeysEx.aob);
+          renderAobEx();
+        }
+      };
+    });
+  }
+
+  // Render members directory
+  function renderMembersEx() {
+    const listEl = document.getElementById('member-list');
+    const searchInput = document.getElementById('memberSearch');
+    if (!listEl) return;
+    const members = loadMembers();
+    const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
+    listEl.innerHTML = '';
+    members.filter(m => !query || m.name.toLowerCase().includes(query)).forEach(m => {
+      const li = document.createElement('li');
+      li.textContent = m.name;
+      listEl.appendChild(li);
+    });
+  }
+
+  // Render user management table (admin only)
+  function renderUsersEx() {
+    const tbody = document.querySelector('#users-table tbody');
+    if (!tbody) return;
+    const users = loadUsers();
+    tbody.innerHTML = '';
+    users.forEach((u, index) => {
+      const tr = document.createElement('tr');
+      // Build both toggle and delete actions in the actions cell. The delete
+      // button will permanently remove the user from the list (and Firestore
+      // if syncing), whereas the toggle button simply enables/disables the
+      // user without deletion. We prevent deletion of the built‑in admin
+      // account and the currently logged in user.
+      tr.innerHTML = `
+        <td>${u.displayName}</td>
+        <td>${u.username}</td>
+        <td>${u.role}</td>
+        <td>${u.active === false ? 'Disabled' : 'Active'}</td>
+        <td>
+          <button class="toggle-user" data-index="${index}">${u.active === false ? 'Enable' : 'Disable'}</button>
+          <button class="delete-user" data-index="${index}">Delete</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+    // Attach click handlers for enabling/disabling users
+    tbody.querySelectorAll('.toggle-user').forEach(btn => {
+      btn.onclick = () => {
+        const idx = parseInt(btn.dataset.index);
+        const users = loadUsers();
+        const user = users[idx];
+        if (!user) return;
+        // Prevent disabling own account
+        const current = loadCurrentUser();
+        if (current && current.username === user.username) {
+          alert('You cannot disable your own account.');
+          return;
+        }
+        user.active = !user.active;
+        saveUsers(users);
+        broadcastUpdateEx(dataKeysEx.users);
+        renderUsersEx();
+      };
+    });
+    // Attach click handlers for deleting users
+    tbody.querySelectorAll('.delete-user').forEach(btn => {
+      btn.onclick = () => {
+        const idx = parseInt(btn.dataset.index);
+        let users = loadUsers();
+        const user = users[idx];
+        if (!user) return;
+        // Prevent deleting the built‑in admin or the currently logged in user
+        const current = loadCurrentUser();
+        if (current && current.username === user.username) {
+          alert('You cannot delete your own account.');
+          return;
+        }
+        if (user.username && user.username.toLowerCase() === 'ccacadmin') {
+          alert('The built‑in admin account cannot be deleted.');
+          return;
+        }
+        // Confirm deletion
+        if (!confirm(`Are you sure you want to delete the user '${user.displayName || user.username}'?`)) {
+          return;
+        }
+        // Remove the user from the list
+        users.splice(idx, 1);
+        saveUsers(users);
+        broadcastUpdateEx(dataKeysEx.users);
+        renderUsersEx();
+      };
+    });
+  }
+  function formatSanctionEx(code) {
+    switch (code) {
+      case 'verbal_warning': return 'Verbal Warning';
+      case 'official_warning': return 'Official Warning';
+      case 'suspended_pending_meeting': return 'Suspended pending meeting';
+      case 'banned_indefinitely': return 'Banned indefinitely';
+      default: return code;
+    }
+  }
+  function formatDateTimeEx(iso) {
+    const d = new Date(iso);
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function openCaseDetailsEx(id) {
+    const sanctions = loadDataEx(dataKeysEx.sanctions);
+    const sanction = sanctions.find(s => s.id === id);
+    if (!sanction) return;
+    const overlay = document.getElementById('case-details-overlay');
+    const content = document.getElementById('case-details-content');
+    let html = `<h3>Case Details: ${sanction.caseId}</h3>`;
+    html += `<p><strong>Member:</strong> ${sanction.name}</p>`;
+    html += `<p><strong>Sanction Level:</strong> ${formatSanctionEx(sanction.sanctionLevel)}</p>`;
+    html += `<p><strong>Status:</strong> ${sanction.status}</p>`;
+    html += `<p><strong>Reason:</strong> ${sanction.reason}</p>`;
+    if (sanction.details) html += `<p><strong>Details:</strong> ${sanction.details}</p>`;
+    html += `<p><strong>Issued At:</strong> ${formatDateTimeEx(sanction.issuedAt)}</p>`;
+    html += `<p><strong>Created By:</strong> ${sanction.createdByName} (${sanction.createdByRole})</p>`;
+    html += '<h4>Attachments</h4>';
+    if (sanction.attachments && sanction.attachments.length > 0) {
+      html += '<ul>';
+      sanction.attachments.forEach(att => {
+        html += `<li><a href="${att.dataUrl}" download="${att.fileName}">${att.fileName}</a> (uploaded by ${att.uploadedByName} at ${formatDateTimeEx(att.uploadedAt)})</li>`;
+      });
+      html += '</ul>';
+    } else {
+      html += '<p>No attachments.</p>';
+    }
+    // Include audit trail verification message
+    const validChain = verifyAuditTrail(sanction.updates);
+    html += '<h4>Audit Trail</h4>';
+    html += `<p style="font-style:italic; color:${validChain ? '#2e7d32' : '#c62828'};">Audit trail integrity check: ${validChain ? 'Valid' : 'FAILED'}</p>`;
+    html += '<table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Note</th></tr></thead><tbody>';
+    sanction.updates.forEach(up => {
+      html += `<tr><td>${formatDateTimeEx(up.changedAt)}</td><td>${up.changedByName} (${up.changedByRole})</td><td>${up.action}</td><td>${up.note || ''}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    html += '<h4>Add Note</h4>';
+    html += '<form id="note-form-ex"><textarea id="note-text-ex" rows="3" style="width:100%;"></textarea><button type="submit" style="margin-top:5px;">Add Note</button></form>';
+    content.innerHTML = html;
+    overlay.style.display = 'block';
+    document.getElementById('note-form-ex').onsubmit = function(ev) {
+      ev.preventDefault();
+      const note = document.getElementById('note-text-ex').value.trim();
+      if (!note) {
+        alert('Please enter a note.');
+        return;
+      }
+      const user = loadCurrentUser();
+      const changedAtNote = new Date().toISOString();
+      const prevNote = sanction.updates[sanction.updates.length - 1];
+      const prevHashNote = prevNote ? prevNote.hash : '0';
+      const newHashNote = computeUpdateHash('note_added', user.username, changedAtNote, note, prevHashNote);
+      sanction.updates.push({
+        action: 'note_added',
+        changedBy: user.username,
+        changedByName: user.displayName,
+        changedByRole: user.role,
+        changedAt: changedAtNote,
+        note: note,
+        prevHash: prevHashNote,
+        hash: newHashNote
+      });
+      saveDataEx(dataKeysEx.sanctions, sanctions);
+      broadcastUpdateEx(dataKeysEx.sanctions);
+      openCaseDetailsEx(id);
+    };
+  }
+  document.getElementById('close-case-overlay').onclick = function() {
+    document.getElementById('case-details-overlay').style.display = 'none';
+  };
+  function handleFileUploadEx(caseId, file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const dataUrl = e.target.result;
+      const sanctions = loadDataEx(dataKeysEx.sanctions);
+      const sanction = sanctions.find(s => s.id === caseId);
+      if (!sanction) return;
+      const user = loadCurrentUser();
+      const uploadedAt = new Date().toISOString();
+      sanction.attachments.push({ id: Date.now(), fileName: file.name, dataUrl, uploadedBy: user.username, uploadedByName: user.displayName, uploadedAt });
+      // Compute hash chain entry for attachment_added
+      const prev = sanction.updates[sanction.updates.length - 1];
+      const prevHash = prev ? prev.hash : '0';
+      const newHashAtt = computeUpdateHash('attachment_added', user.username, uploadedAt, file.name, prevHash);
+      sanction.updates.push({
+        action: 'attachment_added',
+        changedBy: user.username,
+        changedByName: user.displayName,
+        changedByRole: user.role,
+        changedAt: uploadedAt,
+        note: file.name,
+        prevHash: prevHash,
+        hash: newHashAtt
+      });
+      saveDataEx(dataKeysEx.sanctions, sanctions);
+      broadcastUpdateEx(dataKeysEx.sanctions);
+      const overlay = document.getElementById('case-details-overlay');
+      if (overlay.style.display === 'block') {
+        const titleEl = document.getElementById('case-details-content').querySelector('h3');
+        if (titleEl && titleEl.textContent.includes(sanction.caseId)) {
+          openCaseDetailsEx(caseId);
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  /**
+   * Request permission for browser notifications. Should be invoked after login.
+   */
+  function requestNotificationPermission() {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().then(() => {});
+    }
+  }
+
+  /**
+   * Send a browser notification if permission has been granted.
+   * @param {string} title The notification title
+   * @param {string} body The notification body text
+   */
+  function sendNotification(title, body) {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'granted') {
+      try {
+        new Notification(title, { body });
+      } catch (e) {
+        console.error('Unable to send notification', e);
+      }
+    }
+  }
+
+  /**
+   * Generate a printable case report for a given sanction. Opens a new
+   * window with case details, attachments list and audit trail, then
+   * triggers the browser's print dialog. Used when officials or
+   * chairmen need to produce a record for meetings or legal procedures.
+   *
+   * @param {Object} sanction The sanction object to print
+   */
+  function printCaseReport(sanction) {
+    if (!sanction) return;
+    const win = window.open('', '_blank');
+    const title = 'Case Report – ' + sanction.caseId;
+    let html = '<html><head><title>' + title + '</title>';
+    html += '<style>body{font-family:Arial,Helvetica,sans-serif;margin:20px;} table{width:100%;border-collapse:collapse;margin-top:10px;} th,td{border:1px solid #ddd;padding:6px;} th{background-color:#f0f0f0;}</style>';
+    html += '</head><body>';
+    html += '<h2>' + title + '</h2>';
+    html += '<p><strong>Member:</strong> ' + sanction.name + '</p>';
+    html += '<p><strong>Sanction Level:</strong> ' + formatSanctionEx(sanction.sanctionLevel) + '</p>';
+    html += '<p><strong>Status:</strong> ' + sanction.status + '</p>';
+    html += '<p><strong>Reason:</strong> ' + sanction.reason + '</p>';
+    if (sanction.details) html += '<p><strong>Details:</strong> ' + sanction.details + '</p>';
+    html += '<p><strong>Issued At:</strong> ' + formatDateTimeEx(sanction.issuedAt) + '</p>';
+    html += '<p><strong>Created By:</strong> ' + sanction.createdByName + ' (' + sanction.createdByRole + ')</p>';
+    html += '<h3>Attachments</h3>';
+    if (sanction.attachments && sanction.attachments.length > 0) {
+      html += '<ul>';
+      sanction.attachments.forEach(att => {
+        html += '<li>' + att.fileName + ' (uploaded by ' + att.uploadedByName + ' at ' + formatDateTimeEx(att.uploadedAt) + ')</li>';
+      });
+      html += '</ul>';
+    } else {
+      html += '<p>No attachments.</p>';
+    }
+    html += '<h3>Audit Trail</h3>';
+    html += '<table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Note</th></tr></thead><tbody>';
+    sanction.updates.forEach(up => {
+      html += '<tr><td>' + formatDateTimeEx(up.changedAt) + '</td><td>' + up.changedByName + ' (' + up.changedByRole + ')</td><td>' + up.action + '</td><td>' + (up.note || '') + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    html += '</body></html>';
+    win.document.write(html);
+    win.document.close();
+    win.onload = function() {
+      win.print();
+      win.close();
+    };
+  }
+
+  /**
+   * Print a summary for a completed meeting. Produces a report with the
+   * meeting title, date/time, location, details and outcomes. Opens a new
+   * window and triggers the browser's print dialog.
+   *
+   * @param {Object} meeting The meeting object to print
+   */
+  function printMeetingSummary(meeting) {
+    if (!meeting) return;
+    const win = window.open('', '_blank');
+    const title = 'Meeting Summary – ' + meeting.title;
+    let html = '<html><head><title>' + title + '</title>';
+    html += '<style>body{font-family:Arial,Helvetica,sans-serif;margin:20px;} ul{margin-top:10px;} table{width:100%;border-collapse:collapse;margin-top:10px;} th,td{border:1px solid #ddd;padding:6px;} th{background-color:#f0f0f0;}</style>';
+    html += '</head><body>';
+    html += '<h2>' + title + '</h2>';
+    html += '<p><strong>Date & Time:</strong> ' + formatDateTimeEx(meeting.date) + '</p>';
+    if (meeting.location) html += '<p><strong>Location:</strong> ' + meeting.location + '</p>';
+    if (meeting.details) html += '<p><strong>Details:</strong> ' + meeting.details + '</p>';
+    if (meeting.outcomes && meeting.outcomes.length > 0) {
+      html += '<h3>Outcomes / Notes</h3>';
+      html += '<ul>';
+      meeting.outcomes.forEach(out => {
+        html += '<li>' + out.note + ' (recorded by ' + out.recordedBy + ' at ' + formatDateTimeEx(out.recordedAt) + ')</li>';
+      });
+      html += '</ul>';
+    } else {
+      html += '<p><em>No outcomes recorded.</em></p>';
+    }
+    html += '</body></html>';
+    win.document.write(html);
+    win.document.close();
+    win.onload = function() {
+      win.print();
+      win.close();
+    };
+  }
+
+  /**
+   * Render a simple dashboard overview showing counts of active sanctions, banned members
+   * and upcoming meetings. This avoids reliance on external chart libraries and provides
+   * immediate insight even when offline.
+   */
+  function renderDashboard() {
+    const statsEl = document.getElementById('dashboard-stats');
+    if (!statsEl) return;
+    // Gather sanction data
+    const sanctions = loadDataEx(dataKeysEx.sanctions);
+    // Active sanctions excluding indefinite bans
+    const activeCount = sanctions.filter(s => s.status === 'active' && s.sanctionLevel !== 'banned_indefinitely').length;
+    // Suspended cases awaiting meetings
+    const suspendedCount = sanctions.filter(s => s.status === 'active' && s.sanctionLevel === 'suspended_pending_meeting').length;
+    // Banned members (indefinite bans)
+    const bannedCount = sanctions.filter(s => s.status === 'active' && s.sanctionLevel === 'banned_indefinitely').length;
+    // Upcoming meetings count: use meeting objects with status 'upcoming' if defined
+    const meetings = loadDataEx(dataKeysEx.meetings);
+    let upcomingCount = 0;
+    if (Array.isArray(meetings)) {
+      upcomingCount = meetings.filter(m => m.status === 'upcoming').length;
+    }
+    // Build statistic cards. Each card is clickable and will navigate to the
+    // relevant section when clicked. For example, clicking on the Active or
+    // Suspended cards takes the user to the Live Sanctions tab, clicking on
+    // Banned members navigates to the Banned tab, and Upcoming meetings
+    // navigates to the Meetings tab.
+    statsEl.innerHTML = '';
+    const statData = [
+      { label: 'Active sanctions', count: activeCount, target: 'live' },
+      { label: 'Suspended cases', count: suspendedCount, target: 'live' },
+      { label: 'Banned members', count: bannedCount, target: 'banned' },
+      { label: 'Upcoming meetings', count: upcomingCount, target: 'meetings' }
+    ];
+    statData.forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'stat-card';
+      card.setAttribute('data-target', item.target);
+      card.innerHTML = `<h3>${item.label}</h3><p>${item.count}</p>`;
+      card.onclick = () => {
+        const tgt = card.getAttribute('data-target');
+        showSection(tgt);
+        // Refresh the appropriate tables/sections after navigation
+        if (tgt === 'live' || tgt === 'banned') {
+          renderTablesEx();
+        } else if (tgt === 'meetings') {
+          renderMeetingsEx();
+        }
+      };
+      statsEl.appendChild(card);
+    });
+    // Prepare data for sanction type distribution chart
+    const typeCounts = {
+      verbal_warning: 0,
+      official_warning: 0,
+      suspended_pending_meeting: 0,
+      banned_indefinitely: 0
+    };
+    sanctions.forEach(s => {
+      if (s.status === 'active') {
+        if (typeCounts.hasOwnProperty(s.sanctionLevel)) {
+          typeCounts[s.sanctionLevel]++;
+        }
+      }
+    });
+    const chartLabels = ['Verbal Warning', 'Official Warning', 'Suspended', 'Banned'];
+    const chartData = [
+      typeCounts.verbal_warning,
+      typeCounts.official_warning,
+      typeCounts.suspended_pending_meeting,
+      typeCounts.banned_indefinitely
+    ];
+    const chartColors = [
+      '#3498db', /* blue for verbal */
+      '#f39c12', /* orange for official */
+      '#e67e22', /* amber for suspended */
+      '#e74c3c'  /* red for banned */
+    ];
+    // Draw a custom donut chart on the dashboard using the Canvas API.
+    // This avoids external dependencies and works fully offline.
+    (function drawDonut() {
+      const canvas = document.getElementById('sanction-chart');
+      const legendEl = document.getElementById('chart-legend');
+      if (!canvas || !legendEl) return;
+      const ctx = canvas.getContext('2d');
+      // Determine total sanctions to calculate slice sizes
+      const total = chartData.reduce((sum, val) => sum + val, 0);
+      // Reset canvas size to current displayed width/height for crisp rendering
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+      const radius = Math.min(centerX, centerY) * 0.9;
+      // Clear any previous drawing
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Draw slices
+      let startAngle = -0.5 * Math.PI;
+      chartData.forEach((val, idx) => {
+        const endAngle = startAngle + (total > 0 ? (val / total) * 2 * Math.PI : 0);
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+        ctx.closePath();
+        ctx.fillStyle = chartColors[idx] || '#ccc';
+        ctx.fill();
+        startAngle = endAngle;
+      });
+      // Draw inner white circle for donut effect
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.arc(centerX, centerY, radius * 0.5, 0, 2 * Math.PI);
+      ctx.closePath();
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      // Build legend
+      legendEl.innerHTML = '';
+      chartLabels.forEach((lbl, idx) => {
+        const count = chartData[idx];
+        const color = chartColors[idx] || '#ccc';
+        const item = document.createElement('div');
+        item.style.display = 'flex';
+        item.style.alignItems = 'center';
+        item.style.gap = '4px';
+        const swatch = document.createElement('span');
+        swatch.style.display = 'inline-block';
+        swatch.style.width = '12px';
+        swatch.style.height = '12px';
+        swatch.style.backgroundColor = color;
+        swatch.style.borderRadius = '3px';
+        const text = document.createElement('span');
+        text.textContent = `${lbl} (${count})`;
+        item.appendChild(swatch);
+        item.appendChild(text);
+        legendEl.appendChild(item);
+      });
+    })();
+  }
+
+  /**
+   * Export the list of currently banned members (active indefinite bans) to a printable report.
+   * If no banned members exist, notify the user.
+   */
+  function exportBannedMembers() {
+    const sanctions = loadDataEx(dataKeysEx.sanctions);
+    const banned = sanctions.filter(s => s.status === 'active' && s.sanctionLevel === 'banned_indefinitely');
+    if (!banned || banned.length === 0) {
+      alert('No banned members to export.');
+      return;
+    }
+    const win = window.open('', '_blank');
+    let html = '<html><head><title>Banned Members Report</title>';
+    html += '<style>body{font-family:Arial,Helvetica,sans-serif;margin:20px;} table{width:100%;border-collapse:collapse;margin-top:10px;} th,td{border:1px solid #ddd;padding:6px;} th{background-color:#f0f0f0;}</style>';
+    html += '</head><body>';
+    html += '<h2>Banned Members Report</h2>';
+    html += '<table><thead><tr><th>Member</th><th>Reason</th><th>Issued At</th></tr></thead><tbody>';
+    banned.forEach(b => {
+      html += `<tr><td>${b.name}</td><td>${b.reason}</td><td>${formatDateTimeEx(b.issuedAt)}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    html += '</body></html>';
+    win.document.write(html);
+    win.document.close();
+    // Delay printing until the user explicitly requests it. Removing automatic
+    // print and close calls avoids issues with popup blockers and allows the
+    // report to remain open for review. Users can manually print from the
+    // browser's print menu if desired.
+    // win.onload = function() {
+    //   win.print();
+    //   win.close();
+    // };
+  }
+
+  // Storage listener for lastUpdate key
+  window.addEventListener('storage', (event) => {
+    if (event.key === dataKeysEx.lastUpdate) {
+      try {
+        const data = JSON.parse(event.newValue);
+        const key = data.key;
+        if (key === dataKeysEx.sanctions) {
+          renderTablesEx();
+        } else if (key === dataKeysEx.meetings) {
+          renderMeetingsEx();
+        } else if (key === dataKeysEx.aob) {
+          renderAobEx();
+        } else if (key === dataKeysEx.members) {
+          renderMembersEx();
+          updateMembersDatalist();
+        } else if (key === dataKeysEx.users) {
+          renderUsersEx();
+        }
+      } catch (e) {
+        console.error('Error handling storage event:', e);
+      }
+    }
+  });
+
+  // Reset inactivity timer on user interactions
+  document.addEventListener('click', resetIdleTimer, true);
+  document.addEventListener('keypress', resetIdleTimer, true);
+
+  // At the end of the script, automatically determine whether to show the login screen or the dashboard.
+  // This ensures the application loads the correct view on page refresh. We call initUsers() to initialise
+  // the default users if they do not exist, then inspect localStorage for an existing session. If a user
+  // is found we show the dashboard; otherwise we present the login screen. Wrapping in an IIFE avoids
+  // leaking variables to the global scope.
+  (function() {
+    try {
+      // Ensure default users exist in localStorage
+      initUsers();
+    } catch (ex) {
+      // swallow any errors during initialisation; the login will still function
+    }
+    const __current = loadCurrentUser();
+    if (!__current) {
+      showLogin();
+    } else {
+      showDashboard();
+    }
+  })();
+</script>
+</body>
+</html>
